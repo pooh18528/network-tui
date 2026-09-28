@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy this file to aliases.json and put your real MACs here — ตั้งชื่ออุปกรณ์เองเพื่อให้เห็นรุ่นชัด (ดู MAC ใน TUI แล้วกด R สแกนใหม่)",
+  "_example": "MAC: {\"name\": \"nickname\", \"model\": \"model (optional)\", \"vendor\": \"vendor (optional)\", \"type\": \"📱 Phone (optional)\"}",
+  "_tip": "Private/Randomized MAC (🔒): turn off MAC randomization on the phone (Wi-Fi > network > Private address > off), reconnect, and the real vendor will show",
+  "AA:BB:CC:DD:EE:FF": {
+    "name": "example phone",
+    "model": "Example Model",
+    "type": "📱 Phone"
+  }
+}

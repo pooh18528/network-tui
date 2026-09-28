@@ -1,0 +1,5 @@
+textual>=0.44.0
+rich>=13.0.0
+psutil>=5.9.0
+# Python >= 3.10 แนะนำ 3.11+
+# ติดตั้ง: pip install -r requirements.txt

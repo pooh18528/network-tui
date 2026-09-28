@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+*.csv
+network_scan_*.csv
+# ข้อมูลเครื่องตัวเอง (privacy — อย่า commit)
+aliases.json
+settings.json
+known_devices.json
+.DS_Store
+Thumbs.db
