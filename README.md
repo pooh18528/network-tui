@@ -37,7 +37,17 @@
 ![Command palette — Ctrl+P, includes Switch language](img/palette.png)
 
 ```
-
+┌─ 🌐 Network-TUI ────────────────────────────── 22:58:32 ─┐
+│ MY-PC 192.168.1.149 · 192.168.1.0/24 · GW 192.168.1.1     │
+│ Wi-Fi · 📊 7/9 · 🔒 5 · ✏️ 2/9 #1 ✓ Ready                 │
+├──────────────────────────────┬────────────────────────────┤
+│ #  IP             Vendor… Model… Status │ 🔍 192.168.1.105           │
+│ 1  192.168.1.1 🌐  Fiber… Router… 🟢 on │ MAC  C8:8A:D8:10:0D:30     │
+│ 5  192.168.1.149⭐ Unkno… Windo… 🟢 on │ Model Xiaomi Phone…        │
+│ ... (←/→ scroll · ↑/↓ select → details)│ 💡 N rename this device    │
+└──────────────────────────────┴────────────────────────────┘
+ R Scan · F Filter · S Sort · ⇧S Reverse · E Export · I Switch net · N Rename · L Lang · Q Quit · ? Help
+```
 > Wide screen → compact table + **detail pane on the right** (↑↓ to see full info, no `…` truncation)
 > Medium screen → table stretches full width · Narrow screen → unimportant columns auto-hide (`MAC` → `Type` → `Ping` …), see the rest with `←/→`
 
