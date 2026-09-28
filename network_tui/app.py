@@ -21,6 +21,7 @@ from rich.markup import escape as escape_markup
 from .scanner import get_network_infos, scan_network
 from .models import Device, NetworkInfo
 from .lang import t, load_lang, save_lang
+from .utils import mask_ip, mask_mac, mask_text
 
 VERSION = "v2.5"
 
@@ -282,6 +283,7 @@ class NetworkTUI(App):
         Binding("e", "export", "Export CSV (E)"),
         Binding("i", "change_interface", "เปลี่ยนวง/Switch (I)"),
         Binding("n,enter", "alias", "ตั้งชื่อ/Rename (N)"),
+        Binding("p", "mask", "ปกปิด/Privacy (P)"),
         Binding("l", "toggle_lang", "ภาษา/Lang (L)"),
         Binding("question_mark", "help", "ช่วยเหลือ/Help (?)"),
     ]
@@ -309,6 +311,7 @@ class NetworkTUI(App):
         self._content_w = dict(FLEX_MIN)  # ความกว้างตามเนื้อหาจริง (วัดจากข้อมูล)
         self._detail_cursor = -1  # แถวที่แผงรายละเอียดกำลังโชว์ (กันวาดซ้ำ)
         self._detail_on = False  # แผงขวาเปิดอยู่ไหม
+        self.mask_mode = False  # โหมดปกปิด IP/MAC/ชื่อ (กด P) — session-only ไม่จำลงไฟล์
 
     def get_system_commands(self, screen):
         """เพิ่มคำสั่งใน command palette (Ctrl+P) — สลับภาษาโดยไม่ต้องจำปุ่ม L"""
@@ -335,6 +338,23 @@ class NetworkTUI(App):
             table.refresh()
         except Exception:
             pass
+
+    def action_mask(self):
+        """P — สลับโหมดปกปิด IP/MAC/ชื่อเครื่อง (สำหรับแคปจอแชร์)"""
+        self.mask_mode = not self.mask_mode
+        self.notify(t("mask_on" if self.mask_mode else "mask_off", self.lang), timeout=3)
+        self.update_topbar()
+        self.update_detail()
+        self.update_table()
+
+    def _mi(self, s):
+        return mask_ip(s) if self.mask_mode else s
+
+    def _mm(self, s):
+        return mask_mac(s) if self.mask_mode else s
+
+    def _mt(self, s):
+        return mask_text(s) if self.mask_mode else s
 
     def action_toggle_lang(self):
         """L — สลับภาษา ไทย/English ทันที (รวมชื่อรุ่นที่เดาไว้ โดยไม่แตะชื่อที่ผู้ใช้ตั้งเอง)"""
@@ -717,13 +737,16 @@ class NetworkTUI(App):
             mark = " ⭐ YOU" if lg == "en" else " ⭐ เครื่องนี้"
         lock = " 🔒" if getattr(dev, "is_randomized", False) else ""
         g = lambda s: escape_markup(str(s or "-"))
+        show_ip = self._mi(dev.ip)
+        show_mac = self._mm(dev.mac)
+        show_host = self._mt(dev.hostname)
         lines = [
-            f"[bold cyan]🔍 {g(dev.ip)}[/]{mark}",
+            f"[bold cyan]🔍 {g(show_ip)}[/]{mark}",
             "",
-            f"[yellow]IP[/]          {g(dev.ip)}",
-            f"[yellow]MAC[/]         {g(dev.mac)}{lock}",
+            f"[yellow]IP[/]          {g(show_ip)}",
+            f"[yellow]MAC[/]         {g(show_mac)}{lock}",
             f"[yellow]{t('detail_vendor', lg)}[/]       {g(dev.vendor)}",
-            f"[yellow]{t('detail_hostname', lg)}[/]  {g(dev.hostname)}",
+            f"[yellow]{t('detail_hostname', lg)}[/]  {g(show_host)}",
             f"[yellow]{t('detail_model', lg)}[/]         {g(dev.model)}",
             f"[yellow]{t('detail_type', lg)}[/]      {g(dev.device_type)}",
             f"[yellow]{t('detail_status', lg)}[/]       {'🟢 online' if dev.status == 'online' else '🔴 offline'}",
@@ -834,8 +857,8 @@ class NetworkTUI(App):
         gw_text = escape_markup(info.gateway or "-")
         iface_text = escape_markup(info.interface or "-")
         cidr_text = escape_markup(info.cidr or f"{info.local_ip}/24")
-        host_esc = escape_markup(_short(hostname, 24))
-        ip_esc = escape_markup(info.local_ip)
+        host_esc = escape_markup(_short(self._mt(hostname), 24))
+        ip_esc = escape_markup(self._mi(info.local_ip))
 
         online = sum(1 for d in self._all_devices if d.status == "online") if self._all_devices else 0
         total = len(self._all_devices)
@@ -887,7 +910,7 @@ class NetworkTUI(App):
             left.update(t("status_filter", self.lang, f=_short(self.filter_text, 24), n=len(self.devices)))
         elif sel:
             lock = " 🔒" if getattr(sel, 'is_randomized', False) else ""
-            left.update(t("status_selected", self.lang, now=now, ip=sel.ip, lock=lock))
+            left.update(t("status_selected", self.lang, now=now, ip=self._mi(sel.ip), lock=lock))
         else:
             left.update(t("status_done", self.lang, now=now))
 
@@ -953,7 +976,7 @@ class NetworkTUI(App):
 
         for idx, dev in enumerate(devices, 1):
             # IP + marker (ย้าย GW/YOU มาที่นี่ — คอลัมน์สถานะจะได้แคบลง)
-            ip_label = dev.ip
+            ip_label = self._mi(dev.ip)
             if dev.is_gateway:
                 ip_label += " 🌐"
             elif dev.is_self:
@@ -986,7 +1009,7 @@ class NetworkTUI(App):
             elif "Intel" in dev.vendor or "Realtek" in dev.vendor:
                 vendor_text.stylize("dim")
 
-            hostname_raw = _short(dev.hostname, w_host)
+            hostname_raw = _short(self._mt(dev.hostname), w_host)
             hostname_text = Text(hostname_raw)
             if dev.hostname and dev.hostname != "-":
                 hostname_text.stylize("bold cyan" if getattr(dev, 'is_randomized', False) else "white")
@@ -1026,7 +1049,7 @@ class NetworkTUI(App):
             if "Phone" in dev.device_type:
                 type_text.stylize("bold cyan")
 
-            mac_raw = dev.mac or "-"
+            mac_raw = self._mm(dev.mac) or "-"
             if getattr(dev, 'is_randomized', False):
                 mac_raw += "🔒"
             mac_text = Text(_short(mac_raw, 19), style="yellow" if getattr(dev, 'is_randomized', False) else "dim")

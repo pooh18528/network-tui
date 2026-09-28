@@ -60,7 +60,9 @@ def other(lang: str) -> str:
 STRINGS = {
     "th": {
         "loading": "กำลังโหลดข้อมูลเครือข่าย...",
-        "helpbar": "R สแกน · F กรอง · S เรียง · ⇧S กลับด้าน · E Export · I เปลี่ยนวง · N ตั้งชื่อ · L ภาษา · Q ออก · ? ช่วย",
+        "helpbar": "R สแกน · F กรอง · S เรียง · ⇧S กลับด้าน · E Export · I เปลี่ยนวง · N ตั้งชื่อ · P ปกปิด · L ภาษา · Q ออก · ? ช่วย",
+        "mask_on": "🔒 โหมดปกปิด: เปิด — ซ่อน IP/MAC/ชื่อเครื่อง (กด P เพื่อปิด)",
+        "mask_off": "🔓 โหมดปกปิด: ปิด — แสดงข้อมูลจริง",
         "state_scanning": "⏳ สแกน...",
         "state_ready": "✓ พร้อม",
         "status_scanning": "⏳ สแกน {cidr} ...",
@@ -83,7 +85,7 @@ STRINGS = {
             "[yellow]คีย์ลัด:[/]\n"
             "  [bold]R[/] สแกนใหม่  [bold]F//[/] กรอง  [bold]S[/] เรียง  [bold]⇧S[/] กลับด้าน\n"
             "  [bold]N[/] ตั้งชื่อที่เลือก  [bold]E[/] Export  [bold]I[/] สลับวง\n"
-            "  [bold]L[/] สลับภาษา ไทย/English  [bold]Q[/] ออก\n"
+            "  [bold]P[/] ปกปิดข้อมูล (IP/MAC/ชื่อ) สำหรับแคปจอ  [bold]L[/] สลับภาษา ไทย/English  [bold]Q[/] ออก\n"
             "  [bold]←/→[/] เลื่อนตารางแนวนอน  [bold]↑/↓[/] เลือกแถว\n"
             "\n"
             "[yellow]ตั้งชื่อ:[/] เลือกแถว → [bold]N[/] → ใส่ชื่อ/รุ่น → Enter\n"
@@ -171,7 +173,9 @@ STRINGS = {
     },
     "en": {
         "loading": "Loading network info...",
-        "helpbar": "R Scan · F Filter · S Sort · ⇧S Reverse · E Export · I Switch net · N Rename · L ภาษา · Q Quit · ? Help",
+        "helpbar": "R Scan · F Filter · S Sort · ⇧S Reverse · E Export · I Switch net · N Rename · P Mask · L ภาษา · Q Quit · ? Help",
+        "mask_on": "🔒 Privacy mask: ON — IP/MAC/hostnames hidden (press P to off)",
+        "mask_off": "🔓 Privacy mask: OFF — showing real data",
         "state_scanning": "⏳ Scanning...",
         "state_ready": "✓ Ready",
         "status_scanning": "⏳ Scanning {cidr} ...",
@@ -194,7 +198,7 @@ STRINGS = {
             "[yellow]Keys:[/]\n"
             "  [bold]R[/] Rescan  [bold]F//[/] Filter  [bold]S[/] Sort  [bold]⇧S[/] Reverse\n"
             "  [bold]N[/] Rename selected  [bold]E[/] Export  [bold]I[/] Switch network\n"
-            "  [bold]L[/] Switch language ไทย/English  [bold]Q[/] Quit\n"
+            "  [bold]P[/] Mask data (IP/MAC/names) for screenshots  [bold]L[/] Switch language ไทย/English  [bold]Q[/] Quit\n"
             "  [bold]←/→[/] Scroll table  [bold]↑/↓[/] Select row\n"
             "\n"
             "[yellow]Rename:[/] select row → [bold]N[/] → name/model → Enter\n"

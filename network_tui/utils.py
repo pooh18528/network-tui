@@ -62,6 +62,30 @@ def is_valid_ipv4(ip: str) -> bool:
         return False
 
 
+MASK_CHAR = "•"
+
+
+def mask_ip(ip: str) -> str:
+    """ปกปิด IP สำหรับ screenshot/แชร์จอ — เก็บโครงสร้างจุดไว้: 192.168.1.105 -> •••.•••.•••.•••"""
+    if not ip:
+        return ip
+    return re.sub(r"[0-9A-Za-z]", MASK_CHAR, ip)
+
+
+def mask_mac(mac: str) -> str:
+    """ปกปิด MAC — เก็บตัวคั่นไว้: C8:B6:D3:0E:C9:05 -> ••:••:••:••:••:••"""
+    if not mac or mac.strip() in ("", "-"):
+        return mac
+    return re.sub(r"[0-9A-Fa-f]", MASK_CHAR, mac)
+
+
+def mask_text(s: str) -> str:
+    """ปกปิดข้อความทั่วไป (เช่น hostname) — คงความยาวไว้: มือถือหลัก -> •••••"""
+    if not s or s.strip() in ("", "-"):
+        return s
+    return MASK_CHAR * len(s)
+
+
 def normalize_mac(mac: str) -> str:
     """แปลง ff-ff-ff-ff-ff-ff หรือ ff:ff:ff:ff:ff:ff -> AA:BB:CC:DD:EE:FF"""
     if not mac or mac.strip() == "":

@@ -54,6 +54,8 @@ def run_cli_scan(args, lang="en"):
     from rich.panel import Panel
     from .scanner import get_network_infos, scan_network
     from .lang import t
+    from .utils import mask_ip, mask_mac, mask_text
+    mask = bool(getattr(args, "mask", False))
 
     # legacy_windows=False แก้ emoji บน Windows + กว้างพอสำหรับตาราง
     console = Console(legacy_windows=False, force_terminal=False, width=140)
@@ -111,18 +113,20 @@ def run_cli_scan(args, lang="en"):
     for idx, d in enumerate(devices, 1):
         status = d.status_label()
         latency = d.latency_label()
-        mac_disp = d.mac or "-"
+        ip_show = mask_ip(d.ip) if mask else d.ip
+        mac_disp = (mask_mac(d.mac) if mask else d.mac) or "-"
         if d.is_randomized:
             mac_disp += " 🔒"
         vendor_disp = d.vendor
         if d.is_randomized and "Private" not in vendor_disp:
             vendor_disp = f"🔒 {vendor_disp}"
+        host_show = (mask_text(d.hostname) if mask else d.hostname) or "-"
         table.add_row(
             str(idx),
-            d.ip,
+            ip_show,
             mac_disp,
             vendor_disp,
-            d.hostname or "-",
+            host_show,
             d.model,
             d.device_type,
             status,
@@ -208,6 +212,7 @@ Examples / ตัวอย่าง:
     parser.add_argument("--export", type=str, nargs="?", const="auto", default=None, help="export CSV/JSON (filename or auto)")
     parser.add_argument("--list-interfaces", action="store_true", help="list interfaces and exit / แสดง interfaces แล้วออก")
     parser.add_argument("--lang", type=str, choices=["th", "en"], default=None, help="language: th or en (default: saved setting)")
+    parser.add_argument("--mask", action="store_true", help="mask IP/MAC/hostnames in displayed table (for screenshots; export keeps real data)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 

@@ -181,6 +181,7 @@ python main.py --help
 | `E` | 💾 Export CSV |
 | `I` | 🔌 Switch interface (if multiple) |
 | `N` / `Enter` | ✏️ Rename selected device (saved in `aliases.json`) |
+| `P` | 🔒 Privacy mask on/off — hides IP/MAC/hostnames for screenshots (exports keep real data) |
 | `L` | 🌐 Switch language ไทย ⇄ English (remembered next time) |
 | `?` | ❓ Help |
 | `Q` | 🚪 Quit |
@@ -204,6 +205,12 @@ Every scan remembers MACs in `known_devices.json` and diffs automatically:
 | Same MAC, new IP | 🔁 Alert (usually DHCP move, but also an ARP-spoofing symptom) |
 
 The right detail pane shows **first seen / last seen** for the selected machine.
+
+### 🔒 Privacy mask (screenshots)
+
+Press `P` (or `network-tui --cli --mask`) to hide IP / MAC / hostnames everywhere
+(table, side pane, top bar) — `•••.•••.•••.•••`. Press `P` again to show real data.
+Session-only, never saved. Exports (CSV/JSON) always keep real data.
 
 > Note: `known_devices.json` / `aliases.json` contain your home MACs — already git-ignored, never push to a public repo · only scan your own networks
 
