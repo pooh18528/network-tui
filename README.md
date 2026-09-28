@@ -17,7 +17,7 @@
 
 | Feature | Details |
 |---------|-------------|
-| 🔍 **Network scan** | Ping sweep over the subnet (e.g. 192.168.1.0/24) + ARP table |
+| 🔍 **Network scan** | Ping sweep over the subnet (e.g. 192.168.1.0/00) + ARP table |
 | 🏷️ **Vendor** | From OUI (first 6 MAC chars) — 300+ vendors (Apple, Samsung, Xiaomi, TP-Link, Huawei, …) |
 | 💻 **Hostname** | Reverse DNS + NetBIOS (`nbtstat -A`) |
 | 📱 **Model** | Guessed from Hostname + Vendor (iPhone, Galaxy, Redmi, POCO, ThinkPad, ESP32, Printer, TV, Console …) |
@@ -38,12 +38,12 @@
 
 ```
 ┌─ 🌐 Network-TUI ────────────────────────────── 22:58:32 ─┐
-│ 🖥️ pooh18528 192.168.1.171 · 192.168.1.0/24 · GW 192.168.1.1 │
+│ 🖥️ Name 192.168.1.000 · 192.168.1.0/00 · GW 192.168.0.0 │
 │ 🔌 Wi-Fi · 📊 7/9 · 🔒 5 · ✏️ 2/9 #1 ✓ Ready                │
 ├──────────────────────────────┬────────────────────────────┤
-│ #  IP             Vendor… Model…  Status │ 🔍 192.168.1.146           │
-│ 1  192.168.1.1 🌐  Fiber… Router… 🟢 on │ MAC  C8:8A:D8:10:0D:30     │
-│ 5  192.168.1.171⭐ Unkno… Windo… 🟢 on │ Model Xiaomi Phone…        │
+│ #  IP             Vendor… Model…  Status │ 🔍 192.168.1.000          │
+│ 1  192.168.0.0 🌐  Fiber… Router… 🟢 on │ MAC  C8:8A:D8:10:0D:30     │
+│ 5  192.168.1.000⭐ Unkno… Windo… 🟢 on │ Model Xiaomi Phone…        │
 │ ... (←/→ scroll · ↑/↓ select → details) │ 💡 N rename this device    │
 └──────────────────────────────┴────────────────────────────┘
  R Scan · F Filter · S Sort · ⇧S Reverse · E Export · I Switch net · N Rename · Q Quit · ? Help
