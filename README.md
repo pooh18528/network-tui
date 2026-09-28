@@ -32,6 +32,10 @@
 
 ## 📸 TUI preview
 
+![Main screen — device table + detail pane](img/tui-main.png)
+
+![Command palette — Ctrl+P, includes Switch language](img/palette.png)
+
 ```
 ┌─ 🌐 Network-TUI ────────────────────────────── 22:58:32 ─┐
 │ 🖥️ pooh18528 192.168.1.171 · 192.168.1.0/24 · GW 192.168.1.1 │
