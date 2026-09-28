@@ -32,7 +32,7 @@
 
 ## 📸 TUI preview
 
-![Main screen — device table + detail pane](img/)
+![Main screen — device table + detail pane](img/tui-main.png)
 
 ![Command palette — Ctrl+P, includes Switch language](img/palette.png)
 
