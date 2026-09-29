@@ -50,6 +50,7 @@
 ```
 > Wide screen → compact table + **detail pane on the right** (↑↓ to see full info, no `…` truncation)
 > Medium screen → table stretches full width · Narrow screen → unimportant columns auto-hide (`MAC` → `Type` → `Ping` …), see the rest with `←/→`
+> Tip: need more columns (e.g. to reveal the detail pane)? Zoom the terminal out with **Ctrl + mouse-wheel down**, or maximize the window
 
 ---
 
