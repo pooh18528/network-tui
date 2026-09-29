@@ -23,7 +23,7 @@ from .models import Device, NetworkInfo
 from .lang import t, load_lang, save_lang
 from .utils import mask_ip, mask_mac, mask_text
 
-VERSION = "v2.5"
+VERSION = "v2.6"
 
 
 def _short(text: str, max_len: int, placeholder: str = "-") -> str:
@@ -465,7 +465,7 @@ class NetworkTUI(App):
         self.update_topbar()
         self.update_appbar()
         try:
-            self.notify(f"Network-TUI {VERSION} · {'ไทย' if self.lang == 'th' else 'English'} · L=สลับภาษา/Lang", timeout=4)
+            self.notify(f"Network-TUI {VERSION} · {'ไทย' if self.lang == 'th' else 'English'} · {self.theme} · L=สลับภาษา/Lang", timeout=4)
         except Exception:
             pass
         self.action_scan()
