@@ -59,37 +59,34 @@ COL_LABEL_KEY = {
 
 
 CSS = """
+/* สีทั้งหมดอ้าง theme variables ($background/$surface/$primary/...) —
+   เปลี่ยน theme ใน palette แล้วทั้งแอปเปลี่ยนตาม (dracula/nord/light/...) */
 Screen {
-    background: #0b0f1f;
-}
-
-Header {
-    background: #1a1f3a;
-    color: #7dd3fc;
+    background: $background;
 }
 
 /* แถบบนสุดแบบกำหนดเอง 3 ส่วน (แทน Header ที่ว่างโล่ง) */
 #appbar {
     height: 1;
-    background: #1a1f3a;
-    color: #7dd3fc;
+    background: $surface;
+    color: $accent;
     padding: 0 1;
     layout: horizontal;
 }
 
 #appbar_left {
     width: 1fr;
-    color: #38bdf8;
+    color: $primary;
 }
 
 #appbar_left:hover {
-    background: #232c52;
+    background: $boost;
     text-style: bold;
 }
 
 #appbar_center {
     width: auto;
-    color: #7dd3fc;
+    color: $accent;
     text-style: bold;
 }
 
@@ -101,39 +98,40 @@ Header {
 
 #appbar_status {
     width: 1fr;
-    color: #94a3b8;
+    color: $text-muted;
     text-align: right;
 }
 
 #appbar_quit {
     width: auto;
-    color: #f87171;
+    color: $error;
     text-style: bold;
     padding: 0 1;
 }
 
 #appbar_quit:hover {
-    background: #7f1d1d;
-    color: #ffffff;
+    background: $boost;
+    color: $error;
+    text-style: bold underline;
 }
 
 #topbar {
     height: auto;
     min-height: 3;
-    background: #141a33;
-    border-bottom: solid #2a3050;
+    background: $surface;
+    border-bottom: solid $border;
     padding: 0 1;
     layout: horizontal;
 }
 
 #topbar_info {
-    color: #cbd5e1;
+    color: $text;
     height: auto;
     width: 1fr;
 }
 
 #topbar_right {
-    color: #94a3b8;
+    color: $text-muted;
     height: auto;
     width: auto;
     text-align: right;
@@ -142,7 +140,7 @@ Header {
 #table_container {
     height: 1fr;
     min-height: 5;
-    background: #0f142b;
+    background: $background;
     margin: 0;
     padding: 0;
 }
@@ -157,55 +155,45 @@ Header {
     width: 1fr;
     min-width: 30;
     height: 1fr;
-    background: #101736;
-    border-left: solid #2a3050;
+    background: $surface;
+    border-left: solid $border;
     padding: 0 1;
-    color: #cbd5e1;
+    color: $text;
     display: none;
 }
 
 #detail_title {
-    color: #7dd3fc;
+    color: $accent;
     text-style: bold;
     height: 1;
     margin-bottom: 1;
 }
 
 #detail_body {
-    color: #cbd5e1;
+    color: $text;
     height: auto;
 }
 
 DataTable {
-    background: #0f142b;
-    scrollbar-color: #2a3050;
-    scrollbar-background: #0f142b;
+    background: $surface;
+    scrollbar-color: $scrollbar;
+    scrollbar-background: $scrollbar-background;
 }
 
 DataTable > .datatable--header {
-    background: #1e293b;
-    color: #38bdf8;
+    background: $boost;
+    color: $primary;
     text-style: bold;
 }
 
-DataTable > .datatable--cursor {
-    background: #2b4a7f;
-}
-
-DataTable > .datatable--even-row {
-    background: #0f142b;
-}
-
-DataTable > .datatable--odd-row {
-    background: #111834;
-}
+/* cursor + zebra ใช้ default ของ Textual (ปรับตาม theme เอง) */
 
 #statusbar {
     height: 1;
-    background: #141a33;
-    border-top: solid #2a3050;
+    background: $surface;
+    border-top: solid $border;
     padding: 0 1;
-    color: #94a3b8;
+    color: $text-muted;
 }
 
 #status_left {
@@ -214,13 +202,13 @@ DataTable > .datatable--odd-row {
 
 #status_right {
     width: auto;
-    color: #22d3ee;
+    color: $accent;
 }
 
 #helpbar {
     height: 1;
-    background: #0b0f1f;
-    color: #7c8aa5;
+    background: $background;
+    color: $text-muted;
     text-align: center;
     padding: 0 1;
 }
@@ -296,8 +284,16 @@ class NetworkTUI(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.lang = load_lang()
-        from .lang import set_current
+        from .lang import set_current, load_theme
         set_current(self.lang)
+        # theme ที่จำไว้ (ถ้าชื่อไม่มีใน textual เวอร์ชันนี้จะ fallback เงียบๆ)
+        try:
+            saved = load_theme()
+            available = getattr(self, "available_themes", None)
+            if not available or saved in available:
+                self.theme = saved
+        except Exception:
+            pass
         self._all_devices: List[Device] = []
         self._sort_key = "ip"
         self._sort_reverse = False
@@ -312,6 +308,21 @@ class NetworkTUI(App):
         self._detail_cursor = -1  # แถวที่แผงรายละเอียดกำลังโชว์ (กันวาดซ้ำ)
         self._detail_on = False  # แผงขวาเปิดอยู่ไหม
         self.mask_mode = False  # โหมดปกปิด IP/MAC/ชื่อ (กด P) — session-only ไม่จำลงไฟล์
+
+    def watch_theme(self, old: str, new: str) -> None:
+        """จำ theme ทุกครั้งที่เปลี่ยน (เช่น เลือกใน palette)"""
+        try:
+            base = getattr(super(), "watch_theme", None)
+            if callable(base):
+                base(old, new)
+        except Exception:
+            pass
+        try:
+            from .lang import save_theme
+            if new:
+                save_theme(new)
+        except Exception:
+            pass
 
     def get_system_commands(self, screen):
         """เพิ่มคำสั่งใน command palette (Ctrl+P) — สลับภาษาโดยไม่ต้องจำปุ่ม L"""
@@ -1003,7 +1014,7 @@ class NetworkTUI(App):
             if "Private" in dev.vendor or "Randomized" in dev.vendor or getattr(dev, 'is_randomized', False):
                 vendor_text.stylize("yellow")
             elif "Apple" in dev.vendor:
-                vendor_text.stylize("bold white")
+                vendor_text.stylize("bold")
             elif "Samsung" in dev.vendor or "Xiaomi" in dev.vendor or "China Dragon" in dev.vendor:
                 vendor_text.stylize("yellow")
             elif "Intel" in dev.vendor or "Realtek" in dev.vendor:
@@ -1012,7 +1023,9 @@ class NetworkTUI(App):
             hostname_raw = _short(self._mt(dev.hostname), w_host)
             hostname_text = Text(hostname_raw)
             if dev.hostname and dev.hostname != "-":
-                hostname_text.stylize("bold cyan" if getattr(dev, 'is_randomized', False) else "white")
+                # ข้อความ default ตาม theme (อย่า fix สีขาว — บน light theme อ่านไม่ออก)
+                if getattr(dev, 'is_randomized', False):
+                    hostname_text.stylize("bold cyan")
             else:
                 hostname_text.stylize("dim")
 
@@ -1043,7 +1056,7 @@ class NetworkTUI(App):
                 latency = f"TTL{dev.ttl}"
             else:
                 latency = "-"
-            latency_text = Text(latency, style="yellow" if dev.latency_ms is not None and dev.latency_ms < 50 else "white")
+            latency_text = Text(latency, style="yellow" if dev.latency_ms is not None and dev.latency_ms < 50 else "default")
 
             type_text = Text(_short(dev.device_type, 10, placeholder="📦"))
             if "Phone" in dev.device_type:

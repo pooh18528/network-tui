@@ -313,5 +313,6 @@ MIT — free to use and modify
 - [ ] Real-time traffic graph (psutil net_io)
 - [ ] Dark/Light theme toggle
 - [x] Scan history + join/leave diff (done — `history.py`)
+- [x] Theme support (Ctrl+P → Theme, all builtin Textual themes work, remembered in `settings.json`)
 
 > Want something added? Just ask! — built with Network-TUI 🌐

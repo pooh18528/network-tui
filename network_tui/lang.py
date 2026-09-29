@@ -14,31 +14,72 @@ def settings_path() -> Path:
     return _base_dir() / "settings.json"
 
 
-def load_lang() -> str:
-    """อ่านภาษาที่จำไว้ (default อังกฤษ)"""
-    global _current
+def _read_settings() -> dict:
     try:
         p = settings_path()
         if p.exists():
             data = json.loads(p.read_text(encoding="utf-8"))
-            lang = str(data.get("lang", "en")).lower()
-            if lang in SUPPORTED:
-                _current = lang
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
+def _write_settings(data: dict) -> None:
+    try:
+        settings_path().write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+
+def load_lang() -> str:
+    """อ่านภาษาที่จำไว้ (default อังกฤษ)"""
+    global _current
+    try:
+        lang = str(_read_settings().get("lang", "en")).lower()
+        if lang in SUPPORTED:
+            _current = lang
     except Exception:
         pass
     return _current
 
 
 def save_lang(lang: str) -> None:
-    """จำภาษาไว้ใช้ครั้งหน้า"""
+    """จำภาษาไว้ใช้ครั้งหน้า (คงค่าอื่นในไฟล์ไว้ เช่น theme)"""
     global _current
     if lang not in SUPPORTED:
         return
     _current = lang
     try:
-        settings_path().write_text(
-            json.dumps({"lang": lang}, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        data = _read_settings()
+        data["lang"] = lang
+        _write_settings(data)
+    except Exception:
+        pass
+
+
+def load_theme() -> str:
+    """อ่าน theme ที่จำไว้ (default textual-dark)"""
+    try:
+        th = str(_read_settings().get("theme", "") or "").strip()
+        if th:
+            return th
+    except Exception:
+        pass
+    return "textual-dark"
+
+
+def save_theme(theme: str) -> None:
+    """จำ theme ไว้ใช้ครั้งหน้า (คงค่าอื่นในไฟล์ไว้ เช่น lang)"""
+    if not theme:
+        return
+    try:
+        data = _read_settings()
+        data["theme"] = theme
+        _write_settings(data)
     except Exception:
         pass
 
@@ -86,7 +127,7 @@ STRINGS = {
             "  [bold]R[/] สแกนใหม่  [bold]F//[/] กรอง  [bold]S[/] เรียง  [bold]⇧S[/] กลับด้าน\n"
             "  [bold]N[/] ตั้งชื่อที่เลือก  [bold]E[/] Export  [bold]I[/] สลับวง\n"
             "  [bold]P[/] ปกปิดข้อมูล (IP/MAC/ชื่อ) สำหรับแคปจอ  [bold]L[/] สลับภาษา ไทย/English  [bold]Q[/] ออก\n"
-            "  [bold]←/→[/] เลื่อนตารางแนวนอน  [bold]↑/↓[/] เลือกแถว\n"
+            "  [bold]←/→[/] เลื่อนตารางแนวนอน  [bold]↑/↓[/] เลือกแถว  [bold]Ctrl+P[/] เปลี่ยนธีม\n"
             "\n"
             "[yellow]ตั้งชื่อ:[/] เลือกแถว → [bold]N[/] → ใส่ชื่อ/รุ่น → Enter\n"
             "  🔒 Private MAC: ปิดสุ่ม MAC บนมือถือจะเห็นยี่ห้อจริง\n"
@@ -199,7 +240,7 @@ STRINGS = {
             "  [bold]R[/] Rescan  [bold]F//[/] Filter  [bold]S[/] Sort  [bold]⇧S[/] Reverse\n"
             "  [bold]N[/] Rename selected  [bold]E[/] Export  [bold]I[/] Switch network\n"
             "  [bold]P[/] Mask data (IP/MAC/names) for screenshots  [bold]L[/] Switch language ไทย/English  [bold]Q[/] Quit\n"
-            "  [bold]←/→[/] Scroll table  [bold]↑/↓[/] Select row\n"
+            "  [bold]←/→[/] Scroll table  [bold]↑/↓[/] Select row  [bold]Ctrl+P[/] Change theme\n"
             "\n"
             "[yellow]Rename:[/] select row → [bold]N[/] → name/model → Enter\n"
             "  🔒 Private MAC: turn off MAC randomization on the phone to see the real vendor\n"

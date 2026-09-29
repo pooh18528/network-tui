@@ -104,7 +104,7 @@ def run_cli_scan(args, lang="en"):
     table.add_column("IP", style="cyan", no_wrap=True, min_width=14)
     table.add_column("MAC", style="dim", no_wrap=True, min_width=17)
     table.add_column(t("cli_col_vendor", lang), style="yellow", min_width=12, overflow="fold")
-    table.add_column(t("cli_col_hostname", lang), style="white", min_width=12, overflow="fold")
+    table.add_column(t("cli_col_hostname", lang), min_width=12, overflow="fold")
     table.add_column(t("cli_col_model", lang), style="green", min_width=16, overflow="fold")
     table.add_column(t("cli_col_type", lang), style="magenta", min_width=10, no_wrap=True)
     table.add_column(t("cli_col_status", lang), style="green", min_width=14, overflow="fold")
