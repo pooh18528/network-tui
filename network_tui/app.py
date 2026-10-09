@@ -394,7 +394,8 @@ class NetworkTUI(App):
                     if d.mac and normalize_mac(d.mac) in alias_map:
                         continue
                     host = "" if d.hostname in ("-", "") else d.hostname
-                    d.model = guess_model(host, d.vendor, d.mac or "", d.ttl, lang=self.lang)
+                    d.model = guess_model(host, d.vendor, d.mac or "", d.ttl, lang=self.lang,
+                                          open_ports=getattr(d, "open_ports", None))
                     d.device_type = guess_device_type(d.vendor, d.model, d.hostname)
                 except Exception:
                     pass
@@ -762,6 +763,17 @@ class NetworkTUI(App):
             f"[yellow]{t('detail_type', lg)}[/]      {g(dev.device_type)}",
             f"[yellow]{t('detail_status', lg)}[/]       {'🟢 online' if dev.status == 'online' else '🔴 offline'}",
             f"[yellow]Ping[/]        {g(dev.latency_label())}",
+        ]
+        try:
+            _ports = getattr(dev, "open_ports", None) or []
+            if _ports:
+                lines.append(f"[yellow]Ports[/]       {g(','.join(map(str, _ports)))}")
+            _via = getattr(dev, "found_via", "") or ""
+            if _via:
+                lines.append(f"[yellow]Found[/]       {g(_via)}")
+        except Exception:
+            pass
+        lines += [
             f"[yellow]{t('detail_iface', lg)}[/]   {g(dev.interface)}",
             f"[yellow]{t('detail_first', lg)}[/]  {g(_hist_first(dev))}",
             f"[yellow]{t('detail_last', lg)}[/]   {g(_hist_last(dev))}",

@@ -11,7 +11,8 @@ from typing import List, Dict, Callable, Optional, Tuple
 
 from .utils import (
     normalize_mac, ping_once, ping_once_with_ttl, resolve_hostname,
-    get_cidr_from_ip_netmask, cidr_to_ips, is_randomized_mac as is_rand_utils
+    get_cidr_from_ip_netmask, cidr_to_ips, is_randomized_mac as is_rand_utils,
+    tcp_probe_once, is_hotspot_network, DEFAULT_TCP_PORTS,
 )
 from .oui import lookup_vendor, guess_model, guess_device_type, is_randomized_mac
 from .models import Device, NetworkInfo
@@ -369,7 +370,7 @@ def _get_gateway_for_ip(local_ip: str) -> str:
 
 
 def parse_arp_table() -> Dict[str, str]:
-    """อ่าน arp -a -> {ip: mac} — รองรับ Windows/Linux/macOS/BSD
+    """อ่าน arp -a + ip neigh -> {ip: mac} — รองรับ Windows/Linux/macOS/BSD
 
     Windows : `  192.168.1.1           c8-b6-d3-0e-c9-05     dynamic`
     Linux   : `? (192.168.1.1) at c8:b6:d3:0e:c9:05 [ether] on eth0`
@@ -405,6 +406,27 @@ def parse_arp_table() -> Dict[str, str]:
                 result[ip] = mac
     except Exception as e:
         print(f"arp error: {e}")
+    # เสริม: `ip neigh` บน Linux แม่นกว่า arp -a (เห็น STALE/REACHABLE/DELAY ครบ)
+    # ตัวอย่าง: "192.168.43.5 dev wlan0 lladdr 8a:3b:ad:... REACHABLE"
+    try:
+        out2 = _run_cmd(["ip", "neigh", "show"], timeout=5)
+        if out2.strip():
+            for line in out2.splitlines():
+                low = line.lower()
+                if "incomplete" in low or "failed" in low:
+                    continue
+                m = re.search(r"(\d+\.\d+\.\d+\.\d+).*?lladdr\s+((?:[0-9a-fA-F]{1,2}[:-]){5}[0-9a-fA-F]{1,2})", line)
+                if m:
+                    ip, mac_raw = m.group(1), m.group(2)
+                    mac = normalize_mac(mac_raw)
+                    if not re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", mac):
+                        continue
+                    if mac in ("FF:FF:FF:FF:FF:FF", "00:00:00:00:00:00"):
+                        continue
+                    # อย่าทับของเดิมถ้ามีอยู่แล้ว (arp -a มาก่อนก็พอ) — แต่ถ้ายังไม่มีให้เติม
+                    result.setdefault(ip, mac)
+    except Exception:
+        pass
     return result
 
 
@@ -433,6 +455,46 @@ def ping_sweep(ips: List[str], max_workers: int = 64, timeout_ms: int = 700, pro
     return alive
 
 
+def tcp_sweep(ips: List[str], max_workers: int = 100, timeout_ms: int = 350,
+              ports=None, progress_cb: Optional[Callable] = None,
+              skip_ips: Optional[set] = None) -> Dict[str, Tuple[float, list]]:
+    """TCP connect sweep -> {ip: (latency_ms, [open_ports])} เฉพาะที่เปิดพอร์ต
+
+    ใช้จับเครื่องที่ปิด ping แต่เปิดพอร์ต (มือถือ/Windows Firewall/กล้อง/IoT)
+    ข้าม IP ที่ ping ติดแล้ว (skip_ips) เพื่อประหยัดเวลา — เน้นเฉพาะ IP ที่ ping ไม่ตอบ
+    """
+    if ports is None:
+        ports = DEFAULT_TCP_PORTS
+    skip_ips = skip_ips or set()
+    targets = [ip for ip in ips if ip not in skip_ips]
+    if not targets:
+        return {}
+    alive: Dict[str, Tuple[float, list]] = {}
+    total = len(targets)
+    done = 0
+
+    def task(ip):
+        ok, latency, open_ports = tcp_probe_once(ip, ports=ports, timeout_ms=timeout_ms)
+        return ip, ok, latency, open_ports
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(task, ip): ip for ip in targets}
+        for fut in as_completed(futures):
+            try:
+                ip, ok, latency, open_ports = fut.result()
+            except Exception:
+                continue
+            done += 1
+            if progress_cb:
+                try:
+                    progress_cb(done, total, ip, ok)
+                except:
+                    pass
+            if ok:
+                alive[ip] = (latency if latency is not None else 1.0, open_ports)
+    return alive
+
+
 def plan_scan_targets(cidr: str, local_ip: str, limit: int = 512) -> Tuple[object, object, bool]:
     """วางแผนสแกน: คืน (net_ที่จะping, net_ทั้งหมด, โดนย่อไหม)
 
@@ -453,13 +515,17 @@ def scan_network(
     progress_cb: Optional[Callable] = None,
     do_hostname: bool = True,
     lang: str = "th",
+    enable_tcp: bool = True,
+    tcp_timeout_ms: int = 350,
+    retries: int = 1,
 ) -> List[Device]:
     """
-    สแกนเครือข่าย:
-    1. หา local network
+    สแกนเครือข่าย (v2 — แม่นขึ้นสำหรับ Hotspot มือถือ):
+    1. หา local network + ตรวจว่าเป็นวง Hotspot ไหม (auto-tune)
     2. ping sweep ทั้ง subnet (เก็บ latency + TTL)
-    3. อ่าน arp table
-    4. resolve hostname + vendor + model (รวม TTL + alias + randomized)
+    3. retry ping เฉพาะ IP ที่เงียบ (มือถือตื่นช้า/Doze) + TCP probe (จับเครื่องปิด ping)
+    4. อ่าน ARP 2 รอบ (ก่อน/หลัง TCP — หลัง TCP จะมี MAC งอกขึ้น)
+    5. resolve hostname + vendor + model (รวม TTL + open_ports + alias + randomized)
     """
 
     if network_info is None:
@@ -474,6 +540,16 @@ def scan_network(
 
     # โหลด alias
     alias_map = load_aliases()
+
+    # auto-tune สำหรับวง Hotspot: วงเล็ก (<=254) สแกนดุได้ — ping เร็ว + TCP ครบ
+    try:
+        hotspot = is_hotspot_network(local_ip, gateway, cidr)
+    except Exception:
+        hotspot = False
+    try:
+        network_info.is_hotspot = hotspot
+    except Exception:
+        pass
 
     try:
         scan_net, orig_net, truncated = plan_scan_targets(cidr, local_ip)
@@ -490,13 +566,62 @@ def scan_network(
     except Exception as e:
         raise RuntimeError(f"CIDR ไม่ถูกต้อง {cidr}: {e}")
 
+    # ARP รอบแรก (baseline — บางเครื่องมี MAC ค้างอยู่แล้ว)
+    arp_before = parse_arp_table()
+
     # 1. Ping sweep (ได้ latency + ttl)
     alive = ping_sweep(ips, max_workers=max_workers, timeout_ms=timeout_ms, progress_cb=progress_cb)
 
-    # 2. เก็บ ARP (หลัง ping จะมีข้อมูลมากขึ้น)
-    arp = parse_arp_table()
+    # 2. Retry ping เฉพาะ IP ที่เงียบ (รอบเดียวพอ — จับมือถือที่ตื่นช้า)
+    # ข้ามถ้าเจอเยอะแล้ว (วงปกติ) แต่ถ้าเป็น hotspot หรือเจอน้อยให้ retry เสมอ
+    if retries and retries > 0:
+        try:
+            online_n = len(alive)
+            should_retry = hotspot or online_n <= 5 or len(ips) <= 300
+            if should_retry:
+                missed = [ip for ip in ips if ip not in alive]
+                # โฟกัส IP ที่ ARP รู้จักก่อน (มีแนวโน้มว่ามีตัวตน) + เพื่อนบ้านใกล้ๆ gateway/self
+                priority = set(arp_before.keys())
+                # เรียงให้ priority ขึ้นก่อน จะได้เจอเร็ว
+                missed.sort(key=lambda ip: (0 if ip in priority else 1))
+                # จำกัด retry ไม่เกิน 254 IP กันช้า (hotspot เต็มวงก็แค่ 254 อยู่แล้ว)
+                retry_targets = missed[:254] if hotspot else missed[:128]
+                if retry_targets:
+                    retry_alive = ping_sweep(retry_targets, max_workers=max_workers,
+                                             timeout_ms=min(timeout_ms, 500), progress_cb=None)
+                    alive.update(retry_alive)
+        except Exception:
+            pass
 
-    all_ips = set(k for k in alive.keys()) | set(arp.keys())
+    # 3. TCP probe สำหรับ IP ที่ ping ไม่ติด (จับเครื่องปิด ICMP: iPhone/Windows Firewall)
+    tcp_alive: Dict[str, Tuple[float, list]] = {}
+    if enable_tcp:
+        try:
+            # บน hotspot สแกน TCP ทั้งวง (254 IP เร็วอยู่) — วงปกติสแกนเฉพาะ ARP-known + ใกล้เคียง
+            if hotspot or len(ips) <= 300:
+                tcp_targets = [ip for ip in ips if ip not in alive and ip != local_ip]
+            else:
+                # วงใหญ่: ประหยัดเวลา — probe เฉพาะ IP ที่ ARP เห็นแต่ ping ไม่ติด
+                tcp_targets = [ip for ip in arp_before.keys() if ip not in alive and ip in set(ips)]
+                # + gateway ถ้ายังไม่ติด (router บางตัวปิด ping แต่เปิด 80/53)
+                if gateway and gateway not in alive and gateway not in tcp_targets:
+                    tcp_targets.append(gateway)
+            # ตัด gateway/self ออกถ้าติดแล้ว, จำกัดสูงสุดกันช้า
+            tcp_targets = [ip for ip in tcp_targets if ip != local_ip][:512]
+            if tcp_targets:
+                tcp_alive = tcp_sweep(tcp_targets, max_workers=min(120, max(60, max_workers)),
+                                      timeout_ms=tcp_timeout_ms, progress_cb=None,
+                                      skip_ips=set(alive.keys()))
+        except Exception:
+            tcp_alive = {}
+
+    # 4. เก็บ ARP หลัง ping+TCP (จะมีข้อมูลมากขึ้น — TCP ทำให้ ARP งอก)
+    arp = parse_arp_table()
+    # รวม ARP 2 รอบ (กันรอบหลังหายเพราะ timing)
+    for k, v in arp_before.items():
+        arp.setdefault(k, v)
+
+    all_ips = set(k for k in alive.keys()) | set(k for k in tcp_alive.keys()) | set(arp.keys())
     all_ips.add(local_ip)
     if gateway:
         all_ips.add(gateway)
@@ -520,10 +645,10 @@ def scan_network(
 
     hostname_map: Dict[str, str] = {}
     if do_hostname:
-        # nbtstat ช้า (Windows) — ใช้เฉพาะ IP ที่ ping ติด + gateway/self เท่านั้น
-        # IP ที่เหลือใช้แค่ reverse DNS เร็วๆ ก็พอ
+        # สำคัญ = ping ติด / TCP ติด / gateway / self — กลุ่มนี้ใช้ hostname แบบเต็ม
+        # (reverse DNS + nbtstat/nmblookup/avahi/dig) ที่เหลือใช้แค่ reverse DNS เร็วๆ ก็พอ
         def _resolve(ip: str) -> str:
-            important = (ip in alive) or (ip == local_ip) or (ip == gateway)
+            important = (ip in alive) or (ip in tcp_alive) or (ip == local_ip) or (ip == gateway)
             try:
                 return resolve_hostname(ip, timeout=1.5, try_nbtstat=important) or ""
             except Exception:
@@ -559,7 +684,7 @@ def scan_network(
             except:
                 hostname = ""
 
-        # ถ้า vendor Unknown แต่ hostname มีคำว่า iphone/samsung ให้เดา vendor
+        # ถ้า vendor Unknown แต่ hostname มีคำว่า iphone/samsung ให้เดา vendor (+ oppo/vivo/realme)
         if vendor in ("Unknown / Generic", "Unknown", "Private / Randomized"):
             h = hostname.lower()
             if "iphone" in h or "ipad" in h or "macbook" in h or "imac" in h:
@@ -568,18 +693,55 @@ def scan_network(
                 vendor = "Samsung"
             elif "redmi" in h or "poco" in h or "xiaomi" in h:
                 vendor = "Xiaomi"
+            elif "oppo" in h:
+                vendor = "OPPO"
+            elif "vivo" in h:
+                vendor = "vivo"
+            elif "realme" in h:
+                vendor = "Realme"
+            elif "oneplus" in h:
+                vendor = "OnePlus"
+            elif "huawei" in h or "honor" in h:
+                vendor = "Huawei Mobile"
+            elif "pixel" in h:
+                vendor = "Google"
 
-        # เอา TTL มาช่วยเดารุ่น
+        # เอา TTL มาช่วยเดารุ่น (+ open_ports ช่วยแยก OS)
         ttl = None
         latency = None
+        open_ports: list = []
+        found_via = "arp"
         if ip in alive:
             latency, ttl = alive[ip]
+            found_via = "ping"
+        if ip in tcp_alive:
+            tcp_lat, tcp_ports = tcp_alive[ip]
+            open_ports = list(tcp_ports or [])
+            if latency is None:
+                latency = tcp_lat
+            if found_via == "arp":
+                found_via = "tcp"
+            else:
+                found_via = f"{found_via}+tcp"
+        # เดา TTL จาก open_ports ถ้ายังไม่มี (445/139 เปิด = Windows 128, 22/53 = Linux 64)
+        if ttl is None and open_ports:
+            if 445 in open_ports or 139 in open_ports:
+                ttl = 128
+            elif 22 in open_ports or 53 in open_ports or 80 in open_ports or 443 in open_ports:
+                # router/IoT/phone ส่วนใหญ่ TTL 64 — แต่ Windows ก็เปิด 80/443 ได้
+                # ให้ 64 ไว้ก่อน (เดา phone/IoT ถูกบ่อยกว่าในวง hotspot)
+                if ip == gateway:
+                    ttl = 64
         # ถ้า gateway มี mac แต่ไม่มี ttl ให้เดา ttl 64 (router ส่วนใหญ่เป็น Linux)
         if ip == gateway and ttl is None and mac:
             ttl = 64
         if is_self and ttl is None:
             # TTL ตั้งต้นของเครื่องตัวเอง: Windows=128, macOS/Linux/BSD=64
             ttl = 128 if platform.system().lower() == "windows" else 64
+        if is_self:
+            found_via = "self"
+        elif ip == gateway and found_via == "arp":
+            found_via = "gateway"
 
         # ถ้ามี alias ให้ override
         if alias:
@@ -598,7 +760,7 @@ def scan_network(
         if alias_model:
             model = alias_model
         else:
-            model = guess_model(hostname, vendor, mac, ttl, lang=lang)
+            model = guess_model(hostname, vendor, mac, ttl, lang=lang, open_ports=open_ports)
 
         if alias_type:
             dtype = alias_type
@@ -611,18 +773,25 @@ def scan_network(
             if ttl == 64 or ttl is None:
                 dtype = "📱 Phone"
 
-        # online = ping ติดจริง หรือเป็นเครื่องตัวเอง หรือ gateway ที่มี MAC
-        # ARP อย่างเดียวแต่ ping ไม่ติด = offline (ARP ค้าง) — เดิมนับเป็น online ทำให้ตัวเลขหลอก
-        if ip in alive or is_self:
+        # online = ping ติด / TCP ติด / เครื่องตัวเอง / gateway ที่มี MAC
+        # ARP อย่างเดียวแต่ ping+TCP ไม่ติด = offline (ARP ค้าง) — กันตัวเลขหลอก
+        # เพิ่ม: ถ้ามี hostname แต่ไม่มี MAC/TCP (DHCP มีชื่อ) ให้นับ online ด้วย (มือถือ hotspot บล็อก ping แต่ตอบ DNS)
+        if ip in alive or ip in tcp_alive or is_self:
             status = "online"
         elif ip == gateway and mac:
             status = "online"
             if latency is None:
                 latency = 1.0
+        elif mac and hostname:
+            # มีทั้ง MAC + ชื่อเครื่อง = มีตัวตนจริงแม้ ping/TCP เงียบ (เช่น iPhone ล็อกจอ)
+            status = "online"
+            if found_via == "arp":
+                found_via = "arp+dns"
         elif mac:
             status = "offline"
         else:
-            status = "offline"
+            # ไม่มี MAC เลยแต่ ping/TCP ติด (AP isolation ซ่อน MAC) — ก็นับ online
+            status = "online" if (ip in alive or ip in tcp_alive) else "offline"
 
         devices.append(Device(
             ip=ip,
@@ -638,6 +807,8 @@ def scan_network(
             is_self=is_self,
             interface=network_info.interface,
             is_randomized=is_rand,
+            open_ports=open_ports,
+            found_via=found_via,
         ))
 
     def sort_key(d: Device):

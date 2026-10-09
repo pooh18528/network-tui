@@ -18,6 +18,8 @@ class Device:
     interface: str = ""
     is_randomized: bool = False
     is_new: bool = False  # เจอครั้งแรกในรอบนี้ (rogue-device alert)
+    open_ports: list = field(default_factory=list)  # พอร์ต TCP ที่เปิด (เช่น [80, 443, 445])
+    found_via: str = ""  # ping / tcp / arp / gateway / self (บอกว่าเจอด้วยวิธีไหน)
 
     @property
     def is_online(self) -> bool:
@@ -30,6 +32,8 @@ class Device:
             if self.ttl:
                 s += f"/{self.ttl}"
             return s
+        if self.open_ports:
+            return f":{self.open_ports[0]}"
         if self.ttl:
             return f"TTL{self.ttl}"
         return "-"
@@ -78,6 +82,8 @@ class Device:
             "is_gateway": self.is_gateway,
             "is_self": self.is_self,
             "interface": self.interface,
+            "open_ports": list(self.open_ports or []),
+            "found_via": self.found_via,
         }
 
 
@@ -92,3 +98,4 @@ class NetworkInfo:
     public_ip: str = ""
     total_hosts: int = 0
     scanned_cidr: str = ""  # วงที่สแกนจริง (วงใหญ่อย่าง /16 จะย่อเหลือ /24 รอบตัว)
+    is_hotspot: bool = False  # True ถ้าตรวจว่าเป็นวงแชร์เน็ตมือถือ (auto-tune สแกนแรงขึ้น)

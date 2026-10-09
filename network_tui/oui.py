@@ -233,6 +233,20 @@ OUI_DB = {
     "D05FB8": "Xiaomi / China Dragon",
     "3C71BF": "Espressif / IoT",
     "FCAA14": "Espressif",
+    # --- ชิปมือถือ Mediatek/Unisoc/Apple-modem (เจอบ่อยในวง hotspot) ---
+    "020470": "MediaTek / Xiaomi Hotspot",
+    "0A7135": "MediaTek",
+    "0C6160": "MediaTek",
+    "7C2F80": "Samsung / MediaTek",
+    "2EBAA9": "OPPO / MediaTek",
+    "6AC1A6": "vivo / MediaTek",
+    "8EA7D4": "Realme / MediaTek",
+    "3641DF": "Unisoc / Spreadtrum",
+    "B26EC4": "Unisoc",
+    # --- USB tether / Virtual NIC (แชร์เน็ตผ่านสาย) ---
+    "02050A": "Android USB Tether",
+    "0221A9": "Android USB Tether",
+    "3290CB": "iPhone USB Tether",
 }
 
 # เดา model จาก vendor + hostname pattern
@@ -325,12 +339,33 @@ def lookup_vendor(mac: str) -> str:
     return OUI_DB.get(oui, "Unknown / Generic")
 
 
-def guess_model(hostname: str, vendor: str, mac: str = "", ttl: int = None, lang: str = "th") -> str:
-    """เดารุ่นจาก hostname + vendor + mac + ttl (lang: th/en เฉพาะข้อความภาษาไทย)"""
+def guess_model(hostname: str, vendor: str, mac: str = "", ttl: int = None, lang: str = "th", open_ports=None) -> str:
+    """เดารุ่นจาก hostname + vendor + mac + ttl + open_ports (lang: th/en เฉพาะข้อความภาษาไทย)"""
     from .lang import t
     h = (hostname or "").lower()
     v = (vendor or "").lower()
     is_rand = is_randomized_mac(mac) if mac else False
+    ports = set(open_ports or [])
+
+    # 0. ดูจาก open_ports ก่อน (แม่นสุดสำหรับเครื่องปิด ping แต่เปิดพอร์ต)
+    # 445/139 = Windows แชร์ไฟล์เกือบชัวร์, 631 = Printer, 554 = กล้อง, 22 = Linux/Router
+    if ports:
+        if 631 in ports:
+            return f"{vendor} Printer" if vendor not in ("Unknown / Generic", "Unknown", "Private / Randomized") else "Network Printer"
+        if 554 in ports and not h:
+            return "IP Camera"
+        if (445 in ports or 139 in ports) and "printer" not in h and "canon" not in v and "epson" not in v and "brother" not in v:
+            # Windows PC (มือถือไม่เปิด 445)
+            if h and h not in ("-", ""):
+                for hint, model in MODEL_HINTS.items():
+                    if hint in h:
+                        return model
+            return "Windows PC (SMB)"
+        if ports == {22} or (22 in ports and len(ports) == 1):
+            if "router" in v or "ubiquiti" in v or "cisco" in v or ttl == 64:
+                pass  # ปล่อยให้ logic vendor ด้านล่างตัดสิน (router/linux)
+            elif not h:
+                return "Linux Device (SSH)"
 
     # 1. ดูจาก hostname ก่อน (แม่นสุด)
     for hint, model in MODEL_HINTS.items():

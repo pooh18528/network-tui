@@ -90,7 +90,10 @@ def run_cli_scan(args, lang="en"):
         if done % 25 == 0 or done == total:
             console.print(f"  ⏳ {done}/{total}  {ip} {'✓' if ok else '·'}")
 
-    devices = scan_network(info, timeout_ms=args.timeout, max_workers=args.workers, progress_cb=progress, lang=lang)
+    devices = scan_network(info, timeout_ms=args.timeout, max_workers=args.workers, progress_cb=progress, lang=lang,
+                         enable_tcp=not getattr(args, "no_tcp", False),
+                         tcp_timeout_ms=getattr(args, "tcp_timeout", 350),
+                         retries=getattr(args, "retries", 1))
 
     # เทียบประวัติ rogue-device
     try:
@@ -181,9 +184,9 @@ def run_cli_scan(args, lang="en"):
         else:
             with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
                 w = csv.writer(f)
-                w.writerow(["#", "IP", "MAC", "Vendor", "Hostname", "Model", "Type", "Status", "Latency", "TTL", "Randomized"])
+                w.writerow(["#", "IP", "MAC", "Vendor", "Hostname", "Model", "Type", "Status", "Latency", "TTL", "Randomized", "OpenPorts", "FoundVia"])
                 for idx, d in enumerate(devices, 1):
-                    w.writerow([idx, d.ip, d.mac, d.vendor, d.hostname, d.model, d.device_type, d.status, d.latency_ms or "", getattr(d, 'ttl', '') or "", "YES" if getattr(d, 'is_randomized', False) else ""])
+                    w.writerow([idx, d.ip, d.mac, d.vendor, d.hostname, d.model, d.device_type, d.status, d.latency_ms or "", getattr(d, 'ttl', '') or "", "YES" if getattr(d, 'is_randomized', False) else "", ",".join(map(str, getattr(d, 'open_ports', []) or [])), getattr(d, 'found_via', '')])
         console.print(f"[green]{t('cli_exported', lang, f=out_path)}[/]")
 
     console.print(f"\n[dim]{t('cli_tip1', lang)}[/]")
@@ -209,6 +212,9 @@ Examples / ตัวอย่าง:
     parser.add_argument("-i", "--interface", type=str, default=None, help="interface name or IP / ชื่อ interface หรือ IP")
     parser.add_argument("--timeout", type=int, default=700, help="ping timeout per host in ms, 200-5000 (default 700)")
     parser.add_argument("--workers", type=int, default=80, help="parallel scan threads, 10-200 (default 80)")
+    parser.add_argument("--no-tcp", action="store_true", help="disable TCP fallback probe (faster but miss ping-blocked devices) / ปิด TCP probe")
+    parser.add_argument("--tcp-timeout", type=int, default=350, help="TCP connect timeout per port in ms, 150-2000 (default 350)")
+    parser.add_argument("--retries", type=int, default=1, help="extra ping retry round for silent IPs, 0-2 (default 1, hotspot always retries)")
     parser.add_argument("--export", type=str, nargs="?", const="auto", default=None, help="export CSV/JSON (filename or auto)")
     parser.add_argument("--list-interfaces", action="store_true", help="list interfaces and exit / แสดง interfaces แล้วออก")
     parser.add_argument("--lang", type=str, choices=["th", "en"], default=None, help="language: th or en (default: saved setting)")
@@ -227,6 +233,10 @@ def main(argv=None):
         parser.error("--timeout must be 200-5000 ms")
     if args.workers < 10 or args.workers > 200:
         parser.error("--workers must be 10-200")
+    if args.tcp_timeout < 150 or args.tcp_timeout > 2000:
+        parser.error("--tcp-timeout must be 150-2000 ms")
+    if args.retries < 0 or args.retries > 2:
+        parser.error("--retries must be 0-2")
 
     if args.list_interfaces:
         from .scanner import get_network_infos

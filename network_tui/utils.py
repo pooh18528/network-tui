@@ -213,7 +213,7 @@ def resolve_hostname(ip: str, timeout: float = 1.5, try_nbtstat: bool = True) ->
     if try_nbtstat and platform.system().lower() == "windows":
         try:
             proc = subprocess.run(["nbtstat", "-A", ip], capture_output=True, text=True, timeout=2,
-                                  encoding="utf-8", errors="replace")
+                                   encoding="utf-8", errors="replace")
             out = proc.stdout or ""
             for line in out.splitlines():
                 if "<00>" in line and "UNIQUE" in line:
@@ -223,6 +223,56 @@ def resolve_hostname(ip: str, timeout: float = 1.5, try_nbtstat: bool = True) ->
                         if name and name != ip and name not in ("-", ""):
                             return name
         except:
+            pass
+
+    # 3. NetBIOS / mDNS ฝั่ง Unix (macOS/Linux/BSD) — best effort, ไม่มี lib เพิ่ม
+    if try_nbtstat:
+        sys = platform.system().lower()
+        # 3a. nmblookup (samba) — เจอชื่อ Windows/Android ที่ตั้งแชร์ไฟล์ไว้
+        for cmd in (["nmblookup", "-A", ip],):
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=2,
+                                      encoding="utf-8", errors="replace")
+                out = proc.stdout or ""
+                # หาบรรทัด "<00> - ..." ที่ไม่ใช่ <GROUP>
+                best = ""
+                for line in out.splitlines():
+                    if "<00>" in line and "<GROUP>" not in line:
+                        parts = line.strip().split()
+                        if parts:
+                            name = parts[0].strip()
+                            if name and name not in ("-", ip) and not name.startswith("#"):
+                                best = name
+                                break
+                if best:
+                    return best
+            except Exception:
+                pass
+        # 3b. avahi-resolve (Linux mDNS) — เจอ .local ของ iPhone/Mac/IoT
+        if "linux" in sys or "darwin" in sys or "macos" in sys or "bsd" in sys:
+            for cmd in (["avahi-resolve", "-a", ip],):
+                try:
+                    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=2,
+                                          encoding="utf-8", errors="replace")
+                    out = (proc.stdout or "").strip()
+                    # รูปแบบ: "192.168.1.5\tiphone-witcha.local"
+                    if out and "\t" in out:
+                        name = out.split("\t", 1)[1].strip()
+                        name = re.sub(r"\.local\.?$", "", name, flags=re.IGNORECASE).split(".")[0]
+                        if name and name != ip:
+                            return name
+                except Exception:
+                    pass
+        # 3c. dig -x (ถ้ามี) — reverse DNS ผ่าน DNS server ตรงๆ เผื่อ gethostbyaddr โดน timeout
+        try:
+            proc = subprocess.run(["dig", "+short", "-x", ip], capture_output=True, text=True, timeout=2,
+                                  encoding="utf-8", errors="replace")
+            out = (proc.stdout or "").strip().splitlines()
+            if out:
+                name = out[0].strip().rstrip(".").split(".")[0]
+                if name and name != ip and re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]*$", name):
+                    return name
+        except Exception:
             pass
 
     return ""
@@ -254,3 +304,77 @@ def format_bytes(b: int) -> str:
             return f"{b:.1f} {unit}"
         b /= 1024
     return f"{b:.1f} TB"
+
+
+# ---------- สแกนเสริม: TCP + Hotspot ----------
+
+#: พอร์ตยอดฮิตสำหรับ TCP probe — เจอแม้เครื่องปิด ping (มือถือ/Windows Firewall)
+#: ลำดับสำคัญ: 445/139 (Windows แชร์ไฟล์), 80/443 (มือถือเปิด hotspot captive/tv),
+#: 22 (linux), 53 (router DNS), 8080/8008/8000 (กล้อง/IoT/TV), 554 (กล้อง), 631 (printer)
+DEFAULT_TCP_PORTS = (445, 139, 80, 443, 22, 53, 8080, 8008, 8000, 554, 631, 21)
+
+#: Gateway ทั่วไปของมือถือ Hotspot — ใช้ auto-tune ให้สแกนดุกว่าเดิม
+HOTSPOT_GATEWAYS = {
+    "192.168.43.1",   # Android มาตรฐาน
+    "192.168.49.1",   # Android ใหม่ / Samsung
+    "192.168.48.1",
+    "192.168.137.1",  # Windows ICS / USB tether
+    "192.168.42.129", # USB tether บางรุ่น
+    "172.20.10.1",    # iPhone Personal Hotspot
+}
+
+
+def is_hotspot_network(local_ip: str = "", gateway: str = "", cidr: str = "") -> bool:
+    """เช็คว่าเป็นวง Hotspot มือถือไหม (จะได้สแกนแรงขึ้น + เตือนถูก)"""
+    gw = (gateway or "").strip()
+    if gw in HOTSPOT_GATEWAYS:
+        return True
+    lip = (local_ip or "").strip()
+    # วง iPhone 172.20.10.0/28 และ Android 192.168.43/49/48 เกือบทั้งหมดคือ hotspot
+    if lip.startswith("172.20.10.") or lip.startswith("192.168.43.") or lip.startswith("192.168.49."):
+        return True
+    if lip.startswith("192.168.48.") and (not cidr or "/24" in cidr or "/28" in cidr or "/29" in cidr):
+        # วงเล็ก /24 ที่ gateway ลงท้าย .1 และ IP อยู่ในช่วง hotspot — เดาแบบเผื่อ
+        if gw.endswith(".1"):
+            return True
+    return False
+
+
+def tcp_probe_once(ip: str, ports=None, timeout_ms: int = 400) -> tuple:
+    """ลอง TCP connect หลายพอร์ต คืน (alive, latency_ms, [open_ports]) — ไม่ต้องใช้ admin
+
+    ใช้จับเครื่องที่ปิด ICMP (iPhone ล็อกจอ / Android Doze / Windows Firewall)
+    แต่ยังเปิดพอร์ตไว้ (445/80/ฯลฯ) — ช้ากว่า ping นิดหน่อยแต่แม่นขึ้นมาก
+    """
+    import time
+    if ports is None:
+        ports = DEFAULT_TCP_PORTS
+    timeout = max(0.15, timeout_ms / 1000.0)
+    open_ports: list = []
+    best_lat: Optional[float] = None
+    for port in ports:
+        t0 = time.perf_counter()
+        s = None
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(timeout)
+            rc = s.connect_ex((ip, int(port)))
+            dt = (time.perf_counter() - t0) * 1000.0
+            if rc == 0:
+                open_ports.append(int(port))
+                if best_lat is None or dt < best_lat:
+                    best_lat = dt
+                # เจอพอร์ตแรกแล้วพอ — ไม่ต้องไล่ครบทุกพอร์ต (เร็วขึ้น 5-10x)
+                # แต่ถ้าเป็นพอร์ตแรกๆ ที่เจอช้า ให้ลองต่ออีก 1 พอร์ตเผื่อ latency ดีกว่า? ไม่ — พอแล้ว
+                break
+        except Exception:
+            continue
+        finally:
+            try:
+                if s is not None:
+                    s.close()
+            except Exception:
+                pass
+    if open_ports:
+        return True, (best_lat if best_lat is not None else 1.0), open_ports
+    return False, None, []
